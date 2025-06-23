@@ -23,7 +23,6 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if (data.decode()).startswith("image"):
                 f = open("image.txt", "w")
                 f.write(data.decode())
-
             conn.sendall(data)  # Enviar de vuelta los datos recibidos (eco)
 
         print("Conexión cerrada")
