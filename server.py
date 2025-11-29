@@ -5,9 +5,22 @@ from blockchain import Blockchain
 # Server configuration
 HOST = '127.0.0.1'  # Server IP address (localhost)
 PORT = 65432        # Server port
+BUFFER_SIZE = 65536  # Larger buffer for blockchain data
 
 # Initialize blockchain
 blockchain = Blockchain(difficulty=2)
+
+
+def recv_all(conn: socket.socket) -> bytes:
+    """Receive all data from socket until no more data."""
+    chunks = []
+    while True:
+        chunk = conn.recv(BUFFER_SIZE)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return b''.join(chunks)
+
 
 def handle_command(command: str, data: str) -> str:
     """Handle blockchain commands from clients."""
@@ -54,30 +67,31 @@ def run_server():
             conn, addr = s.accept()
             with conn:
                 print(f"Connected by {addr}")
-                while True:
-                    data = conn.recv(4096)
-                    if not data:
-                        break
-                    
-                    message = data.decode().strip()
-                    print(f"Received: {message}")
-                    
-                    # Parse command and data
-                    parts = message.split(" ", 1)
-                    command = parts[0].upper()
-                    cmd_data = parts[1] if len(parts) > 1 else ""
-                    
-                    # Handle legacy image command
-                    if message.startswith("image"):
-                        with open("image.txt", "w") as f:
-                            f.write(message)
-                        response = json.dumps({"status": "success", "message": "Image data saved"})
-                    else:
-                        response = handle_command(command, cmd_data)
-                    
-                    conn.sendall(response.encode())
-                    print(f"Response: {response}")
-
+                
+                # Receive complete message
+                data = recv_all(conn)
+                if not data:
+                    print("Connection closed (no data)")
+                    continue
+                
+                message = data.decode().strip()
+                print(f"Received: {message}")
+                
+                # Parse command and data
+                parts = message.split(" ", 1)
+                command = parts[0].upper()
+                cmd_data = parts[1] if len(parts) > 1 else ""
+                
+                # Handle legacy image command
+                if message.startswith("image"):
+                    with open("image.txt", "w") as f:
+                        f.write(message)
+                    response = json.dumps({"status": "success", "message": "Image data saved"})
+                else:
+                    response = handle_command(command, cmd_data)
+                
+                conn.sendall(response.encode())
+                print(f"Response: {response}")
                 print("Connection closed")
 
 

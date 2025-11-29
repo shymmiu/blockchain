@@ -4,6 +4,18 @@ import json
 # Server configuration
 HOST = '127.0.0.1'  # Server IP address
 PORT = 65432        # Server port
+BUFFER_SIZE = 65536  # Larger buffer for blockchain data
+
+
+def recv_all(sock: socket.socket) -> bytes:
+    """Receive all data from socket until connection closes."""
+    chunks = []
+    while True:
+        chunk = sock.recv(BUFFER_SIZE)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return b''.join(chunks)
 
 
 def send_command(command: str) -> str:
@@ -11,7 +23,8 @@ def send_command(command: str) -> str:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
         s.sendall(command.encode())
-        data = s.recv(4096)
+        s.shutdown(socket.SHUT_WR)  # Signal we're done sending
+        data = recv_all(s)
         return data.decode()
 
 
