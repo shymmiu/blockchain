@@ -1,28 +1,100 @@
 import socket
+import json
+from blockchain import Blockchain
 
-# Definir la dirección y el puerto en el que el servidor escuchará
-HOST = '127.0.0.1'  # Dirección IP del servidor (localhost)
-PORT = 65432        # Puerto en el que el servidor escuchará
+# Server configuration
+HOST = '127.0.0.1'  # Server IP address (localhost)
+PORT = 65432        # Server port
+BUFFER_SIZE = 65536  # Larger buffer for blockchain data
 
-# Crear un socket TCP/IP
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.bind((HOST, PORT))  # Asignar la dirección y el puerto al socket
-    s.listen()            # Escuchar conexiones entrantes
+# Initialize blockchain
+blockchain = Blockchain(difficulty=2)
 
-    print(f"Servidor escuchando en {HOST}:{PORT}")
 
-    # Esperar a que una conexión entrante
-    conn, addr = s.accept()  # Aceptar la conexión
-    with conn:
-        print(f"Conectado por {addr}")
+def recv_all(conn: socket.socket) -> bytes:
+    """Receive all data from socket until no more data."""
+    chunks = []
+    while True:
+        chunk = conn.recv(BUFFER_SIZE)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return b''.join(chunks)
+
+
+def handle_command(command: str, data: str) -> str:
+    """Handle blockchain commands from clients."""
+    if command == "ADD":
+        try:
+            transaction = json.loads(data)
+            blockchain.add_data(transaction)
+            return json.dumps({"status": "success", "message": "Data added to pending"})
+        except json.JSONDecodeError:
+            blockchain.add_data(data)
+            return json.dumps({"status": "success", "message": "Data added to pending"})
+    
+    elif command == "MINE":
+        block = blockchain.mine_pending_data()
+        if block:
+            return json.dumps({"status": "success", "message": f"Block {block.index} mined", "hash": block.hash})
+        return json.dumps({"status": "info", "message": "No pending data to mine"})
+    
+    elif command == "CHAIN":
+        return json.dumps({"status": "success", "chain": blockchain.get_chain_data()})
+    
+    elif command == "VALIDATE":
+        is_valid = blockchain.is_chain_valid()
+        return json.dumps({"status": "success", "valid": is_valid})
+    
+    elif command == "LENGTH":
+        return json.dumps({"status": "success", "length": len(blockchain)})
+    
+    else:
+        return json.dumps({"status": "error", "message": f"Unknown command: {command}"})
+
+
+def run_server():
+    """Run the blockchain server."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((HOST, PORT))
+        s.listen()
+
+        print(f"Blockchain server listening on {HOST}:{PORT}")
+        print("Commands: ADD <json_data>, MINE, CHAIN, VALIDATE, LENGTH")
+
         while True:
-            data = conn.recv(1024)  # Recibir datos del cliente
-            if not data:
-                break
-            print(f"Recibido: {data.decode()}")
-            if (data.decode()).startswith("image"):
-                f = open("image.txt", "w")
-                f.write(data.decode())
-            conn.sendall(data)  # Enviar de vuelta los datos recibidos (eco)
+            conn, addr = s.accept()
+            with conn:
+                print(f"Connected by {addr}")
+                
+                # Receive complete message
+                data = recv_all(conn)
+                if not data:
+                    print("Connection closed (no data)")
+                    continue
+                
+                message = data.decode().strip()
+                print(f"Received: {message}")
+                
+                # Parse command and data
+                parts = message.split(" ", 1)
+                command = parts[0].upper()
+                cmd_data = parts[1] if len(parts) > 1 else ""
+                
+                # Handle legacy image command
+                if message.startswith("image"):
+                    with open("image.txt", "w") as f:
+                        f.write(message)
+                    response = json.dumps({"status": "success", "message": "Image data saved"})
+                else:
+                    response = handle_command(command, cmd_data)
+                
+                conn.sendall(response.encode())
+                print(f"Response: {response}")
+                print("Connection closed")
 
-        print("Conexión cerrada")
+
+if __name__ == "__main__":
+    run_server()
+
